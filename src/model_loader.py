@@ -5,21 +5,29 @@ from pathlib import Path
 import tempfile
 import streamlit as st
 
-def validate_model_content(data):
-    """Validate that loaded data appears to be a valid model"""
+def validate_model_content(data, file_key=None):
+    """Validate that loaded data appears to be a valid model or supported data structure"""
     try:
+        # Special case for feature info which is just a dictionary
+        if file_key == "feat_info" and isinstance(data, dict):
+            return True
+            
+        # Special case for priors which is also a dictionary
+        if file_key == "priors" and isinstance(data, dict):
+            return True
+            
         # Check if it's a scikit-learn model (has predict method)
         if hasattr(data, 'predict'):
+            return True
+            
+        # Check if it's a transformer (has transform method)
+        if hasattr(data, 'transform'):
             return True
             
         # Check if it's a dictionary containing models/transformers
         if isinstance(data, dict):
             return any(hasattr(v, 'transform') or hasattr(v, 'predict') 
                       for v in data.values())
-            
-        # Check if it's a transformer (has transform method)
-        if hasattr(data, 'transform'):
-            return True
         
         return False
     except:
@@ -49,7 +57,7 @@ def safe_load_pickle(file_path: Path, file_key: str = None) -> tuple:
             try:
                 with open(tmp_path, 'rb') as f:
                     data = pickle.load(f)
-                if validate_model_content(data):
+                if validate_model_content(data, file_key):
                     return data, None
                 errors.append("Invalid model format")
             except Exception as e:
@@ -58,7 +66,7 @@ def safe_load_pickle(file_path: Path, file_key: str = None) -> tuple:
             # Try joblib if pickle fails
             try:
                 data = joblib.load(tmp_path)
-                if validate_model_content(data):
+                if validate_model_content(data, file_key):
                     return data, None
                 errors.append("Invalid model format")
             except Exception as e:
