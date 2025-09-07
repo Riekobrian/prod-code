@@ -16,6 +16,10 @@ def validate_model_content(data):
         if isinstance(data, dict):
             return any(hasattr(v, 'transform') or hasattr(v, 'predict') 
                       for v in data.values())
+            
+        # Check if it's a transformer (has transform method)
+        if hasattr(data, 'transform'):
+            return True
         
         return False
     except:
@@ -23,86 +27,57 @@ def validate_model_content(data):
 
 def safe_load_pickle(file_path: Path, file_key: str = None) -> tuple:
     """
-    Safely load a pickle file with extensive error checking.
+    Safely load a pickle or joblib file.
     Returns (data, error_message)
     """
     try:
         if not file_path.exists():
             return None, f"File not found: {file_path}"
 
-        # Check file size
         if file_path.stat().st_size == 0:
-            return None, f"Empty file: {file_path}"
+            return None, "File is empty"
 
-        # Create a temporary copy to avoid file locking issues
+        # Create a temporary copy for safe loading
         with tempfile.NamedTemporaryFile(suffix='.pkl', delete=False) as tmp:
             tmp.write(file_path.read_bytes())
             tmp_path = Path(tmp.name)
 
         try:
-            # Try different loading methods
-            errors = []
-            
-            # Method 1: Standard pickle
+            # Try pickle first
             try:
                 with open(tmp_path, 'rb') as f:
                     data = pickle.load(f)
                 if validate_model_content(data):
-                    os.unlink(tmp_path)
                     return data, None
-                errors.append("Pickle load succeeded but content validation failed")
-            except Exception as e:
-                errors.append(f"Pickle load failed: {str(e)}")
+            except Exception:
+                pass
 
-            # Method 2: Joblib
+            # Try joblib if pickle fails
             try:
                 data = joblib.load(tmp_path)
                 if validate_model_content(data):
-                    os.unlink(tmp_path)
                     return data, None
-                errors.append("Joblib load succeeded but content validation failed")
-            except Exception as e:
-                errors.append(f"Joblib load failed: {str(e)}")
+            except Exception:
+                pass
 
-            # If we get here, all methods failed
-            os.unlink(tmp_path)
-            error_msg = f"All loading methods failed for {file_key or file_path}:\\n" + "\\n".join(errors)
-            return None, error_msg
+            return None, "Failed to load file as pickle or joblib"
 
         finally:
-            # Ensure temp file is cleaned up
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
 
     except Exception as e:
-        return None, f"Unexpected error loading {file_key or file_path}: {str(e)}"
+        return None, str(e)
 
 def diagnose_pickle_file(file_path: Path) -> str:
     """
-    Diagnose issues with a pickle file.
-    Returns a diagnostic message.
+    Check if a file exists and is non-empty.
     """
     try:
         if not file_path.exists():
-            return "❌ File not found"
-
-        size = file_path.stat().st_size
-        if size == 0:
-            return "❌ File is empty"
-
-        # Check first few bytes
-        with open(file_path, 'rb') as f:
-            header = f.read(50)
-            
-        # Try to decode as text to check for HTML content
-        try:
-            text = header.decode('utf-8', errors='ignore')
-            if '<' in text or 'html' in text.lower():
-                return "❌ File appears to contain HTML - likely corrupted by Google Drive"
-        except:
-            pass
-
-        return f"ℹ️ File size: {size} bytes, appears to be binary data"
-
+            return "File not found"
+        if file_path.stat().st_size == 0:
+            return "File is empty"
+        return f"File exists ({file_path.stat().st_size} bytes)"
     except Exception as e:
-        return f"❌ Error diagnosing file: {str(e)}"
+        return str(e)
