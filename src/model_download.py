@@ -1,113 +1,106 @@
 import os
-import requests
-from tqdm import tqdm
-
-import os
-import gdown
 from pathlib import Path
 import streamlit as st
+import requests
+from tqdm.auto import tqdm
 
-# Map of model files to their Google Drive file IDs
-MODEL_FILES = {
-    "feature_info.pkl": "1L-cKOasNPIsETavQPa6Fxxkc8qxa6Zgr",
-    "gradientboosting_tuned.pkl": "1bPMIgFl0Dn0920oaZtdUg1W2gzYGxzxp",
-    "priors.pkl": "1bUkgWivaOXlvRj4jMGVrTRwb7QdgK-n3",
-    "target_transformer.pkl": "1pHd2xuYLOBlpp2AjY5Hnw4HULg14xJA5"
-}
+# GitHub repository information
+REPO_OWNER = "Riekobrian"
+REPO_NAME = "prod-code"
+RELEASE_TAG = "v1.0.0"  # You'll create this release tag on GitHub
 
-def download_from_gdrive(file_id: str, output_path: str) -> bool:
+# List of required model files
+MODEL_FILES = [
+    "feature_info.pkl",
+    "gradientboosting_tuned.pkl",
+    "priors.pkl",
+    "target_transformer.pkl"
+]
+
+def get_download_url(filename: str) -> str:
+    """Generate the GitHub release asset download URL"""
+    return f"https://github.com/{REPO_OWNER}/{REPO_NAME}/releases/download/{RELEASE_TAG}/{filename}"
+
+def download_file(url: str, destination: Path, filename: str) -> bool:
     """
-    Download a file from Google Drive using gdown.
+    Download a file from a URL with progress bar.
     Returns True if successful, False otherwise.
     """
     try:
-        # Ensure the directory exists
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        
-        # Construct the direct download URL
-        url = f"https://drive.google.com/uc?id={file_id}"
-        
-        # Download the file
-        st.info(f"Downloading {os.path.basename(output_path)}...")
-        success = gdown.download(url, output_path, quiet=False)
-        
-        if success:
-            st.success(f"✅ Downloaded {os.path.basename(output_path)}")
-            return True
-        else:
-            st.error(f"Failed to download {os.path.basename(output_path)}")
-            return False
-            
-    except Exception as e:
-        st.error(f"Error downloading {os.path.basename(output_path)}: {str(e)}")
-        return False
-
-def ensure_model_files(model_dir: str) -> bool:
-    """
-    Check if all required model files exist, download them if they don't.
-    Returns True if all files are available, False if any download failed.
-    """
-    model_dir = Path(model_dir)
-    success = True
-    
-    for filename, file_id in MODEL_FILES.items():
-        file_path = model_dir / filename
-        
-        # Skip if file exists and is not empty
-        if file_path.exists() and file_path.stat().st_size > 0:
-            continue
-            
-        # Download if missing or empty
-        if not download_from_gdrive(file_id, str(file_path)):
-            success = False
-    
-    return success
-
-def download_file(url: str, destination: str) -> bool:
-    """
-    Download a file from a given URL to a destination path.
-    Returns True if successful, False otherwise.
-    """
-    try:
-        # Create directory if it doesn't exist
-        os.makedirs(os.path.dirname(destination), exist_ok=True)
-        
-        # Send a GET request to the URL
         response = requests.get(url, stream=True)
         response.raise_for_status()
         
-        # Get the total file size
-        file_size = int(response.headers.get('content-length', 0))
-
-        # Open the local file to write the downloaded content
+        total_size = int(response.headers.get('content-length', 0))
+        
+        # Create directory if it doesn't exist
+        os.makedirs(destination.parent, exist_ok=True)
+        
         with open(destination, 'wb') as f, tqdm(
-            desc=os.path.basename(destination),
-            total=file_size,
+            desc=f"Downloading {filename}",
+            total=total_size,
             unit='iB',
             unit_scale=True,
             unit_divisor=1024,
-        ) as pbar:
+        ) as progress_bar:
             for data in response.iter_content(chunk_size=1024):
                 size = f.write(data)
-                pbar.update(size)
+                progress_bar.update(size)
         return True
+    except requests.RequestException as e:
+        st.error(f"Failed to download {filename}: {str(e)}")
+        return False
     except Exception as e:
-        print(f"Error downloading {url}: {str(e)}")
+        st.error(f"Error saving {filename}: {str(e)}")
         return False
 
-def ensure_model_files(model_dir: str) -> bool:
+def check_model_files(model_dir: Path) -> bool:
     """
-    Check if all required model files exist, download them if they don't.
-    Returns True if all files are available, False if any download failed.
+    Check if all required model files exist in the specified directory.
+    Returns True if all files exist, False otherwise.
+    """
+    all_files_exist = True
+    for filename in MODEL_FILES:
+        file_path = model_dir / filename
+        if not file_path.exists():
+            st.warning(f"Missing model file: {filename}")
+            all_files_exist = False
+        elif file_path.stat().st_size == 0:
+            st.warning(f"Empty model file: {filename}")
+            all_files_exist = False
+    return all_files_exist
+
+def download_missing_models(model_dir: Path) -> bool:
+    """
+    Download missing model files from GitHub releases.
+    Returns True if all files are present after download attempts, False otherwise.
     """
     success = True
-    for filename, url in MODEL_URLS.items():
-        file_path = os.path.join(model_dir, filename)
-        if not os.path.exists(file_path):
-            print(f"Downloading {filename}...")
-            if not download_file(url, file_path):
+    for filename in MODEL_FILES:
+        file_path = model_dir / filename
+        if not file_path.exists() or file_path.stat().st_size == 0:
+            url = get_download_url(filename)
+            if not download_file(url, file_path, filename):
                 success = False
-                print(f"Failed to download {filename}")
-                continue
-            print(f"Successfully downloaded {filename}")
     return success
+
+def ensure_model_files(base_path: str = "models") -> bool:
+    """
+    Ensure all required model files are present, downloading them if necessary.
+    Returns True if all files are present after potential downloads, False otherwise.
+    """
+    model_dir = Path(base_path)
+    os.makedirs(model_dir, exist_ok=True)
+    
+    # First check if all files exist
+    if check_model_files(model_dir):
+        st.success("All model files are present.")
+        return True
+        
+    # If any files are missing or empty, try to download them
+    st.info("Downloading missing model files...")
+    if download_missing_models(model_dir):
+        st.success("All model files downloaded successfully.")
+        return True
+    else:
+        st.error("Failed to download all model files.")
+        return False
