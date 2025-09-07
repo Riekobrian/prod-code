@@ -4,6 +4,10 @@ from datetime import datetime
 from difflib import get_close_matches
 from pathlib import Path
 
+# Version compatibility check
+from src.version_check import ensure_compatibility
+ensure_compatibility()
+
 st.set_page_config(page_title="Car Price (Kenya) - Year Aware", page_icon="🚗", layout="centered")
 
 # Hide Streamlit branding on mobile
