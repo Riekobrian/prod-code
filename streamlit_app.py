@@ -472,4 +472,4 @@ st.markdown("""
 """)
 
 st.markdown("---")
-st.caption("🚗 Kenya Car Price Predictor — Year-aware priors + ML model. Override any feature for personalized prediction!")
+st.caption(" Kenya Car Price Predictor — Year-aware priors + ML model. Override any feature for personalized prediction!")
