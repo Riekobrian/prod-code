@@ -2,6 +2,7 @@ import streamlit as st
 import os, sys, pickle, pandas as pd, numpy as np
 from datetime import datetime
 from difflib import get_close_matches
+from pathlib import Path
 
 st.set_page_config(page_title="Car Price (Kenya) - Year Aware", page_icon="🚗", layout="centered")
 
@@ -50,9 +51,13 @@ def _first_existing(paths):
 @st.cache_resource
 def load_artifacts():
     try:
-        # First try to load locally
+        from src.model_loader import safe_load_pickle, diagnose_pickle_file
+        
         artifacts = {}
+        errors = []
+        
         for key in ["model", "y_tf", "feat_info", "priors"]:
+            # Try local paths first
             candidates = []
             candidates.append(ABS_PATHS[key])
             candidates += [os.path.join(PROJECT_ROOT, p) for p in RELATIVE_FALLBACKS[key]]
@@ -63,12 +68,27 @@ def load_artifacts():
                 from src.model_download import ensure_model_files
                 models_dir = os.path.join(PROJECT_ROOT, "models")
                 if not ensure_model_files(models_dir):
-                    raise FileNotFoundError(f"Could not download or locate {key} file")
+                    diagnosis = "Could not download model file"
+                    errors.append(f"❌ {key}: {diagnosis}")
+                    continue
                 # Try again after download
                 path = os.path.join(models_dir, os.path.basename(RELATIVE_FALLBACKS[key][0]))
             
-            with open(path, "rb") as f:
-                artifacts[key] = pickle.load(f)
+            # Try to load the file safely
+            data, error = safe_load_pickle(Path(path), key)
+            if error:
+                diagnosis = diagnose_pickle_file(Path(path))
+                errors.append(f"❌ {key}: {diagnosis}\\n   {error}")
+                continue
+                
+            artifacts[key] = data
+        
+        if not artifacts:
+            raise ValueError("No artifacts could be loaded:\\n" + "\\n".join(errors))
+            
+        if errors:
+            st.warning("⚠️ Some files had loading issues:\\n" + "\\n".join(errors))
+            
         return artifacts, None
     except Exception as e:
         return None, f"{type(e).__name__}: {e}"
@@ -402,10 +422,10 @@ if predict_clicked:
     if err:
         st.error(f"Prediction failed: {err}")
     else:
-        st.success(f"## 🎯 Predicted Price: KES {price:,.0f}")
+        st.success(f"##  Predicted Price: KES {price:,.0f}")
         st.caption(source_desc)
 
-        with st.expander("💡 Why did I get this price?"):
+        with st.expander(" Why did I get this price?"):
             st.markdown("""
             Your price is calculated using:
             -  **Your inputs** for insurance, mileage, power, etc. (if provided)
@@ -429,7 +449,7 @@ if predict_clicked:
             df_show = pd.DataFrame([show]).T.rename(columns={0: "value"})
             st.dataframe(sanitize_for_display(df_show))
 
-        if st.checkbox("🔬 Debug: Sensitivity to insurance & mileage"):
+        if st.checkbox(" Debug: Sensitivity to insurance & mileage"):
             variants = []
             for scale in [0.5, 1.0, 2.0]:
                 f = features.copy()
@@ -467,9 +487,9 @@ st.markdown("""
 ###  Quick Guide
 -  Use **Preview Assumptions** to see default values
 -  Override **any feature** in expanders for personalized results
--  Try **Sensitivity Analysis** to see how insurance/mileage affect price
+-  Try **Sensitivity Analysis** to see how insurance/mileage and other features affect price (shows well the importance of these features in the model)
 -  Use **Inspect Priors** only for debugging
 """)
 
 st.markdown("---")
-st.caption(" Kenya Car Price Predictor — Year-aware priors + ML model. Override any feature for personalized prediction!")
+st.caption(" Kenya Car Price Predictor —   ML model + Year-aware priors. Override any feature for personalized prediction!")
