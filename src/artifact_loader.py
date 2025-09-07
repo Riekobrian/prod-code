@@ -49,37 +49,40 @@ def load_all_artifacts(project_root: str, model_mapping: Dict[str, str]) -> Tupl
         models_dir = Path(project_root) / "models"
         models_dir.mkdir(parents=True, exist_ok=True)
         
-        # First, ensure all required files are present
-        if not check_model_files(models_dir):
-            st.info("🔄 Downloading missing model files...")
-            if not download_missing_models(models_dir):
-                raise ValueError("Failed to download required model files")
-        else:
-            st.success("✅ All model files present")
+        # First check if files exist and are valid
+        missing_files = []
+        for filename in model_mapping.values():
+            file_path = models_dir / filename
+            if not file_path.exists() or file_path.stat().st_size == 0:
+                missing_files.append(filename)
+        
+        # Download missing files if needed
+        if missing_files:
+            with st.spinner("🔄 Downloading model files..."):
+                if not download_missing_models(models_dir):
+                    raise ValueError("Failed to download model files from GitHub release")
         
         # Load each artifact
         artifacts = {}
         errors = []
         
-        for key, filename in model_mapping.items():
-            data, error = load_model_safely(models_dir, key, filename)
-            
-            if error:
-                errors.append(f"❌ {key}: {error}")
-            else:
-                artifacts[key] = data
+        with st.spinner("📦 Loading model files..."):
+            for key, filename in model_mapping.items():
+                data, error = safe_load_pickle(models_dir / filename, key)
+                
+                if error:
+                    errors.append(f"❌ {key}: {error}")
+                else:
+                    artifacts[key] = data
         
         if not artifacts:
-            raise ValueError("Failed to load model files. Please ensure you have created a GitHub release with the model files.")
+            raise ValueError("Failed to load model files. Please check that the GitHub release contains valid model files.")
             
         if errors:
             error_msg = "\n".join(errors)
-            st.error(f"Some artifacts failed to load:\n{error_msg}")
             return None, error_msg
         
         return artifacts, None
         
     except Exception as e:
-        error_msg = f"{type(e).__name__}: {e}"
-        st.error(error_msg)
-        return None, error_msg
+        return None, str(e)

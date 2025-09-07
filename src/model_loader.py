@@ -32,7 +32,7 @@ def safe_load_pickle(file_path: Path, file_key: str = None) -> tuple:
     """
     try:
         if not file_path.exists():
-            return None, f"File not found: {file_path}"
+            return None, "File not found"
 
         if file_path.stat().st_size == 0:
             return None, "File is empty"
@@ -43,24 +43,28 @@ def safe_load_pickle(file_path: Path, file_key: str = None) -> tuple:
             tmp_path = Path(tmp.name)
 
         try:
+            errors = []
+            
             # Try pickle first
             try:
                 with open(tmp_path, 'rb') as f:
                     data = pickle.load(f)
                 if validate_model_content(data):
                     return data, None
-            except Exception:
-                pass
+                errors.append("Invalid model format")
+            except Exception as e:
+                errors.append(f"Pickle error: {str(e)}")
 
             # Try joblib if pickle fails
             try:
                 data = joblib.load(tmp_path)
                 if validate_model_content(data):
                     return data, None
-            except Exception:
-                pass
+                errors.append("Invalid model format")
+            except Exception as e:
+                errors.append(f"Joblib error: {str(e)}")
 
-            return None, "Failed to load file as pickle or joblib"
+            return None, f"Failed to load model: {' | '.join(errors)}"
 
         finally:
             if os.path.exists(tmp_path):

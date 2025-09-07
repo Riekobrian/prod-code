@@ -218,20 +218,16 @@ st.markdown("""
 ### _Powered by Machine Learning + Year-Aware Market Intelligence_
 """, unsafe_allow_html=True)
 
-with st.spinner("Loading model artifacts..."):
+with st.spinner("📦 Loading models..."):
     artifacts, load_err = load_artifacts()
 
 if load_err:
-    st.error("""
-    Failed to load model files. This could be because:
-    1. The GitHub release has not been created yet
-    2. The model files have not been uploaded to the release
-    3. There was a network error downloading the files
-    
-    Error details: """ + load_err)
+    st.error("⚠️ Model loading failed. Please check that all model files are valid in the GitHub release.")
+    with st.expander("Error Details"):
+        st.code(load_err)
     st.stop()
 
-st.success("✅ Model ready")
+st.success("✅ Models ready")
 
 # Main required inputs
 col1, col2 = st.columns(2)
