@@ -28,18 +28,21 @@ def setup_project_path():
 
 PROJECT_ROOT = setup_project_path()
 
+MODEL_FILE_MAPPING = {
+    "model": "gradientboosting_tuned.pkl",
+    "y_tf": "target_transformer.pkl",
+    "feat_info": "feature_info.pkl",
+    "priors": "priors.pkl"
+}
+
 ABS_PATHS = {
-    "model": os.path.join(PROJECT_ROOT, "models", "gradientboosting_tuned.pkl"),
-    "y_tf": os.path.join(PROJECT_ROOT, "models", "target_transformer.pkl"),
-    "feat_info": os.path.join(PROJECT_ROOT, "models", "feature_info.pkl"),
-    "priors": os.path.join(PROJECT_ROOT, "models", "priors.pkl"),
+    key: os.path.join(PROJECT_ROOT, "models", filename)
+    for key, filename in MODEL_FILE_MAPPING.items()
 }
 
 RELATIVE_FALLBACKS = {
-    "model": ["models/gradientboosting_tuned.pkl", "notebooks/models/gradientboosting_tuned.pkl"],
-    "y_tf": ["models/target_transformer.pkl", "notebooks/models/target_transformer.pkl"],
-    "feat_info": ["models/feature_info.pkl", "notebooks/models/feature_info.pkl"],
-    "priors": ["models/priors.pkl"],
+    key: [f"models/{filename}", f"notebooks/models/{filename}"]
+    for key, filename in MODEL_FILE_MAPPING.items()
 }
 
 def _first_existing(paths):
@@ -50,48 +53,8 @@ def _first_existing(paths):
 
 @st.cache_resource
 def load_artifacts():
-    try:
-        from src.model_loader import safe_load_pickle, diagnose_pickle_file
-        
-        artifacts = {}
-        errors = []
-        
-        for key in ["model", "y_tf", "feat_info", "priors"]:
-            # Try local paths first
-            candidates = []
-            candidates.append(ABS_PATHS[key])
-            candidates += [os.path.join(PROJECT_ROOT, p) for p in RELATIVE_FALLBACKS[key]]
-            path = _first_existing(candidates)
-            
-            # If file not found locally, try to download it
-            if not path:
-                from src.model_download import ensure_model_files
-                models_dir = os.path.join(PROJECT_ROOT, "models")
-                if not ensure_model_files(models_dir):
-                    diagnosis = "Could not download model file"
-                    errors.append(f"❌ {key}: {diagnosis}")
-                    continue
-                # Try again after download
-                path = os.path.join(models_dir, os.path.basename(RELATIVE_FALLBACKS[key][0]))
-            
-            # Try to load the file safely
-            data, error = safe_load_pickle(Path(path), key)
-            if error:
-                diagnosis = diagnose_pickle_file(Path(path))
-                errors.append(f"❌ {key}: {diagnosis}\\n   {error}")
-                continue
-                
-            artifacts[key] = data
-        
-        if not artifacts:
-            raise ValueError("No artifacts could be loaded:\\n" + "\\n".join(errors))
-            
-        if errors:
-            st.warning("⚠️ Some files had loading issues:\\n" + "\\n".join(errors))
-            
-        return artifacts, None
-    except Exception as e:
-        return None, f"{type(e).__name__}: {e}"
+    from src.artifact_loader import load_all_artifacts
+    return load_all_artifacts(PROJECT_ROOT, MODEL_FILE_MAPPING)
 
 # ────────────────────────────────────────────────────────────────────────────────
 # Utilities
